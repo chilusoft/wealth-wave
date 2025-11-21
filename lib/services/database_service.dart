@@ -26,8 +26,6 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), 'expense_tracker.db');
     return await openDatabase(
       path,
-    return await openDatabase(
-      path,
       version: 5,
       onCreate: (db, version) async {
         await db.execute('''
