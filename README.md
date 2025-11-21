@@ -21,6 +21,19 @@
 
 **Your privacy is our top priority. What happens on your phone, stays on your phone.**
 
+### 🔥 Firewall Test - Prove It Yourself!
+
+**Don't just take our word for it - verify it yourself:**
+
+You can block Wealth Wave's internet access using any mobile firewall app (NetGuard, AFWall+, etc.) and the app will **continue to work perfectly**. This proves that no data ever leaves your device.
+
+Try it:
+1. Install a firewall app (e.g., NetGuard from F-Droid)
+2. Block Wealth Wave's internet access completely
+3. Use the app normally - all features work!
+
+**See [PRIVACY.md](PRIVACY.md) for our complete privacy policy.**
+
 ## 📱 Installation Instructions
 
 ### Option 1: Download from Releases
