@@ -26,7 +26,9 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), 'expense_tracker.db');
     return await openDatabase(
       path,
-      version: 4,
+    return await openDatabase(
+      path,
+      version: 5,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE transactions(
@@ -42,6 +44,11 @@ class DatabaseService {
             isVerified INTEGER DEFAULT 0
           )
         ''');
+        await db.execute('''
+          CREATE TABLE deleted_transactions(
+            transactionId TEXT PRIMARY KEY
+          )
+        ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -52,6 +59,13 @@ class DatabaseService {
         }
         if (oldVersion < 4) {
           await db.execute('ALTER TABLE transactions ADD COLUMN isVerified INTEGER DEFAULT 0');
+        }
+        if (oldVersion < 5) {
+          await db.execute('''
+            CREATE TABLE deleted_transactions(
+              transactionId TEXT PRIMARY KEY
+            )
+          ''');
         }
       },
     );
@@ -78,6 +92,19 @@ class DatabaseService {
     }
 
     final db = await database;
+    
+    // Check if transaction was previously deleted
+    if (transaction.transactionId != null && transaction.transactionId!.isNotEmpty) {
+      final List<Map<String, dynamic>> deletedMaps = await db.query(
+        'deleted_transactions',
+        where: 'transactionId = ?',
+        whereArgs: [transaction.transactionId],
+      );
+      
+      if (deletedMaps.isNotEmpty) {
+        return 0; // Previously deleted, do not re-insert
+      }
+    }
     
     // Enhanced duplicate detection: transactionId + sender + recipient
     if (transaction.transactionId != null && transaction.transactionId!.isNotEmpty) {
@@ -185,6 +212,27 @@ class DatabaseService {
     }
 
     final db = await database;
+    
+    // Get transaction details before deleting to save ID
+    final List<Map<String, dynamic>> maps = await db.query(
+      'transactions',
+      columns: ['transactionId'],
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    
+    if (maps.isNotEmpty) {
+      final transactionId = maps.first['transactionId'] as String?;
+      if (transactionId != null && transactionId.isNotEmpty) {
+        // Record as deleted
+        await db.insert(
+          'deleted_transactions',
+          {'transactionId': transactionId},
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+    }
+
     await db.delete(
       'transactions',
       where: 'id = ?',

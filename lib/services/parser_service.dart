@@ -7,8 +7,9 @@ class ParserService {
   static final RegExp _recipientRegex = RegExp(r'(?:to|from)\s+([A-Za-z\s]+)', caseSensitive: false);
   
   // Transaction ID patterns for different providers
+  // Transaction ID patterns for different providers
   static final RegExp _transactionIdRegex = RegExp(
-    r'(?:txn|transaction|ref|reference)(?:\s+)?(?:id|no|number)?[\s:.-]*([A-Z0-9]{5,})',
+    r'(?:transaction|trans|txn|reference|ref)(?:\s+)?(?:id|no|number)?[\s:.-]*([A-Z0-9]{5,})',
     caseSensitive: false
   );
   
@@ -16,11 +17,15 @@ class ParserService {
     final sender = message.sender?.toUpperCase() ?? '';
     final body = message.body ?? '';
     final date = message.date ?? DateTime.now();
+    return parseRaw(sender, body, date);
+  }
 
-    // Only process messages from these specific sources (case insensitive)
-    if (sender.contains('AIRTEL')) {
+  Transaction? parseRaw(String sender, String body, DateTime date) {
+    final normalizedSender = sender.toUpperCase();
+    // Only process messages from these specific sources
+    if (normalizedSender == 'AIRTELMONEY') {
       return _parseAirtel(body, date, sender);
-    } else if (sender.contains('MOMO') || sender.contains('MTN')) {
+    } else if (normalizedSender.contains('MOMO') || normalizedSender.contains('MTN')) {
       return _parseMomo(body, date, sender);
     } else if (sender.contains('STAN') || sender.contains('SCB') || 
                sender.contains('STANCHART')) {
@@ -138,11 +143,20 @@ class ParserService {
     return null;
   }
   
+  static final RegExp _transactionIdStartRegex = RegExp(r'^([A-Z0-9]{5,})[\s.]', caseSensitive: false);
+
   String? _extractTransactionId(String body) {
     final match = _transactionIdRegex.firstMatch(body);
     if (match != null && match.groupCount >= 1) {
       return match.group(1)?.trim().toUpperCase();
     }
+    
+    // Fallback: Check if ID is at the start of the message
+    final startMatch = _transactionIdStartRegex.firstMatch(body);
+    if (startMatch != null && startMatch.groupCount >= 1) {
+      return startMatch.group(1)?.trim().toUpperCase();
+    }
+
     return null;
   }
 }
