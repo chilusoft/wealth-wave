@@ -1,11 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../models/transaction_model.dart';
+import '../providers/transaction_provider.dart';
 
-class TransactionDetailScreen extends StatelessWidget {
+class TransactionDetailScreen extends StatefulWidget {
   final Transaction transaction;
 
   const TransactionDetailScreen({super.key, required this.transaction});
+
+  @override
+  State<TransactionDetailScreen> createState() => _TransactionDetailScreenState();
+}
+
+class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
+  late bool _isVerified;
+
+  @override
+  void initState() {
+    super.initState();
+    _isVerified = widget.transaction.isVerified;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,7 +30,7 @@ class TransactionDetailScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Transaction Details'),
-        backgroundColor: transaction.type == TransactionType.credit
+        backgroundColor: widget.transaction.type == TransactionType.credit
             ? Colors.green
             : Colors.red,
       ),
@@ -28,7 +43,7 @@ class TransactionDetailScreen extends StatelessWidget {
               padding: const EdgeInsets.all(32),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: transaction.type == TransactionType.credit
+                  colors: widget.transaction.type == TransactionType.credit
                       ? [Colors.green.shade400, Colors.green.shade700]
                       : [Colors.red.shade400, Colors.red.shade700],
                   begin: Alignment.topLeft,
@@ -38,7 +53,7 @@ class TransactionDetailScreen extends StatelessWidget {
               child: Column(
                 children: [
                   Icon(
-                    transaction.type == TransactionType.credit
+                    widget.transaction.type == TransactionType.credit
                         ? Icons.arrow_downward_rounded
                         : Icons.arrow_upward_rounded,
                     size: 64,
@@ -46,7 +61,7 @@ class TransactionDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    transaction.type == TransactionType.credit ? 'Received' : 'Sent',
+                    widget.transaction.type == TransactionType.credit ? 'Received' : 'Sent',
                     style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 18,
@@ -54,7 +69,7 @@ class TransactionDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    currencyFormat.format(transaction.amount),
+                    currencyFormat.format(widget.transaction.amount),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 48,
@@ -67,45 +82,56 @@ class TransactionDetailScreen extends StatelessWidget {
 
             // Details List
             Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: EdgeInsets.zero,
               child: Column(
                 children: [
+                  _buildVerificationCard(),
+                  const SizedBox(height: 1),
                   _buildDetailCard(
                     icon: Icons.account_balance_wallet,
                     title: 'Source',
-                    value: _getSourceName(transaction.source),
+                    value: _getSourceName(widget.transaction.source),
                     color: Colors.blue,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 1),
                   _buildDetailCard(
                     icon: Icons.phone_android,
                     title: 'Sender',
-                    value: transaction.sender,
+                    value: widget.transaction.sender,
                     color: Colors.orange,
                   ),
-                  if (transaction.recipient != null) ...[
-                    const SizedBox(height: 12),
+                  if (widget.transaction.recipient != null) ...[
+                    const SizedBox(height: 1),
                     _buildDetailCard(
                       icon: Icons.person,
-                      title: transaction.type == TransactionType.credit
+                      title: widget.transaction.type == TransactionType.credit
                           ? 'From'
                           : 'To',
-                      value: transaction.recipient!,
+                      value: widget.transaction.recipient!,
                       color: Colors.purple,
                     ),
                   ],
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 1),
                   _buildDetailCard(
                     icon: Icons.calendar_today,
                     title: 'Date & Time',
-                    value: dateFormat.format(transaction.date),
+                    value: dateFormat.format(widget.transaction.date),
                     color: Colors.teal,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 1),
+                  if (widget.transaction.transactionId != null) ...[
+                    _buildDetailCard(
+                      icon: Icons.tag,
+                      title: 'Transaction ID',
+                      value: widget.transaction.transactionId!,
+                      color: Colors.grey,
+                    ),
+                    const SizedBox(height: 1),
+                  ],
                   _buildDetailCard(
                     icon: Icons.message,
                     title: 'SMS Message',
-                    value: transaction.body,
+                    value: widget.transaction.body,
                     color: Colors.indigo,
                     isMultiline: true,
                   ),
@@ -114,6 +140,42 @@ class TransactionDetailScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildVerificationCard() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+      ),
+      child: SwitchListTile(
+        title: const Text(
+          'Verified Transaction',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          _isVerified ? 'This transaction is verified' : 'Mark as verified',
+          style: TextStyle(color: Colors.grey[600], fontSize: 13),
+        ),
+        value: _isVerified,
+        activeColor: Colors.green,
+        secondary: Icon(
+          _isVerified ? Icons.check_circle : Icons.circle_outlined,
+          color: _isVerified ? Colors.green : Colors.grey,
+          size: 28,
+        ),
+        onChanged: (bool value) async {
+          setState(() {
+            _isVerified = value;
+          });
+          
+          // Update in provider/database
+          await Provider.of<TransactionProvider>(context, listen: false)
+              .toggleVerification(widget.transaction.id);
+        },
       ),
     );
   }
@@ -129,14 +191,7 @@ class TransactionDetailScreen extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
       ),
       child: Row(
         crossAxisAlignment: isMultiline ? CrossAxisAlignment.start : CrossAxisAlignment.center,

@@ -8,6 +8,7 @@ class Transaction {
   final String body;
   final String? recipient; // Who received/sent the money
   final String? transactionId; // Transaction ID from SMS
+  final bool isVerified; // Manual verification status
 
   Transaction({
     this.id,
@@ -19,6 +20,7 @@ class Transaction {
     required this.body,
     this.recipient,
     this.transactionId,
+    this.isVerified = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -32,6 +34,7 @@ class Transaction {
       'body': body,
       'recipient': recipient,
       'transactionId': transactionId,
+      'isVerified': isVerified ? 1 : 0,
     };
   }
 
@@ -46,6 +49,7 @@ class Transaction {
       body: map['body'],
       recipient: map['recipient'],
       transactionId: map['transactionId'],
+      isVerified: map['isVerified'] == 1,
     );
   }
 }

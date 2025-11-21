@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import '../providers/transaction_provider.dart';
 import '../models/transaction_model.dart';
 import 'transaction_detail_screen.dart';
+import 'reconciliation_screen.dart';
+import 'reports_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,6 +16,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _recipientController = TextEditingController();
 
   @override
   void initState() {
@@ -25,6 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _recipientController.dispose();
     super.dispose();
   }
 
@@ -37,6 +41,26 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Wealth Wave'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.bar_chart),
+            tooltip: 'Reports',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ReportsScreen()),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.merge_type),
+            tooltip: 'Reconcile Duplicates',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ReconciliationScreen()),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.filter_list),
             onPressed: () => _showFilterSheet(context, provider),
@@ -60,7 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           // Search bar
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
@@ -80,13 +104,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 filled: true,
                 fillColor: Colors.grey[100],
+                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
               ),
               onChanged: (value) => provider.setSearchQuery(value),
             ),
           ),
 
           // Active filters display
-          if (provider.dateRange != null || provider.sourceFilter != null)
+          if (provider.dateRange != null || 
+              provider.sourceFilter != null || 
+              provider.recipientFilter.isNotEmpty ||
+              provider.verificationFilter != VerificationFilter.all)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               height: 50,
@@ -94,24 +122,26 @@ class _HomeScreenState extends State<HomeScreen> {
                 scrollDirection: Axis.horizontal,
                 children: [
                   if (provider.dateRange != null)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Chip(
-                        label: Text(
-                          '${DateFormat('MMM d').format(provider.dateRange!.start)} - ${DateFormat('MMM d').format(provider.dateRange!.end)}',
-                        ),
-                        deleteIcon: const Icon(Icons.close, size: 18),
-                        onDeleted: () => provider.setDateRange(null),
-                      ),
+                    _buildFilterChip(
+                      '${DateFormat('MMM d').format(provider.dateRange!.start)} - ${DateFormat('MMM d').format(provider.dateRange!.end)}',
+                      () => provider.setDateRange(null),
                     ),
                   if (provider.sourceFilter != null)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Chip(
-                        label: Text(_getSourceName(provider.sourceFilter!)),
-                        deleteIcon: const Icon(Icons.close, size: 18),
-                        onDeleted: () => provider.setSourceFilter(null),
-                      ),
+                    _buildFilterChip(
+                      _getSourceName(provider.sourceFilter!),
+                      () => provider.setSourceFilter(null),
+                    ),
+                  if (provider.recipientFilter.isNotEmpty)
+                    _buildFilterChip(
+                      'To: ${provider.recipientFilter}',
+                      () => provider.setRecipientFilter(''),
+                    ),
+                  if (provider.verificationFilter != VerificationFilter.all)
+                    _buildFilterChip(
+                      provider.verificationFilter == VerificationFilter.verified 
+                          ? 'Verified Only' 
+                          : 'Unverified Only',
+                      () => provider.setVerificationFilter(VerificationFilter.all),
                     ),
                   TextButton.icon(
                     onPressed: () => provider.clearFilters(),
@@ -126,106 +156,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
           Expanded(
             child: provider.transactions.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.inbox_outlined,
-                          size: 64,
-                          color: Colors.grey[400],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No transactions found',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton.icon(
-                          onPressed: () => provider.syncSms(),
-                          icon: const Icon(Icons.sync),
-                          label: const Text('Sync from SMS'),
-                        ),
-                      ],
-                    ),
-                  )
+                ? _buildEmptyState(provider)
                 : ListView.builder(
                     itemCount: provider.transactions.length,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: EdgeInsets.zero,
                     itemBuilder: (context, index) {
                       final tx = provider.transactions[index];
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          leading: CircleAvatar(
-                            radius: 24,
-                            backgroundColor: tx.type == TransactionType.credit
-                                ? Colors.green[100]
-                                : Colors.red[100],
-                            child: Icon(
-                              tx.type == TransactionType.credit
-                                  ? Icons.arrow_downward
-                                  : Icons.arrow_upward,
-                              color: tx.type == TransactionType.credit
-                                  ? Colors.green
-                                  : Colors.red,
-                            ),
-                          ),
-                          title: Text(
-                            tx.recipient ?? tx.sender,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(height: 4),
-                              Text(
-                                _getSourceName(tx.source),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              Text(
-                                DateFormat('MMM d, y h:mm a').format(tx.date),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[500],
-                                ),
-                              ),
-                            ],
-                          ),
-                          trailing: Text(
-                            currencyFormat.format(tx.amount),
-                            style: TextStyle(
-                              color: tx.type == TransactionType.credit
-                                  ? Colors.green
-                                  : Colors.red,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    TransactionDetailScreen(transaction: tx),
-                              ),
-                            );
-                          },
-                        ),
-                      );
+                      return _buildTransactionCard(context, tx, currencyFormat);
                     },
                   ),
           ),
@@ -234,9 +171,142 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildFilterChip(String label, VoidCallback onDelete) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Chip(
+        label: Text(label),
+        deleteIcon: const Icon(Icons.close, size: 18),
+        onDeleted: onDelete,
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(TransactionProvider provider) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.inbox_outlined,
+            size: 64,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No transactions found',
+            style: TextStyle(
+              fontSize: 18,
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: () => provider.syncSms(),
+            icon: const Icon(Icons.sync),
+            label: const Text('Sync from SMS'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTransactionCard(BuildContext context, Transaction tx, NumberFormat currencyFormat) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 1, horizontal: 0),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.zero,
+      ),
+      elevation: 0.5,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 8,
+        ),
+        leading: Stack(
+          children: [
+            CircleAvatar(
+              radius: 24,
+              backgroundColor: tx.type == TransactionType.credit
+                  ? Colors.green[100]
+                  : Colors.red[100],
+              child: Icon(
+                tx.type == TransactionType.credit
+                    ? Icons.arrow_downward
+                    : Icons.arrow_upward,
+                color: tx.type == TransactionType.credit
+                    ? Colors.green
+                    : Colors.red,
+              ),
+            ),
+            if (tx.isVerified)
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check_circle,
+                    size: 16,
+                    color: Colors.blue,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        title: Text(
+          tx.recipient ?? tx.sender,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              _getSourceName(tx.source),
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
+            ),
+            Text(
+              DateFormat('MMM d, y h:mm a').format(tx.date),
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[500],
+              ),
+            ),
+          ],
+        ),
+        trailing: Text(
+          currencyFormat.format(tx.amount),
+          style: TextStyle(
+            color: tx.type == TransactionType.credit
+                ? Colors.green
+                : Colors.red,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) =>
+                  TransactionDetailScreen(transaction: tx),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildBalanceCard(TransactionProvider provider, NumberFormat format) {
     return Container(
-      margin: const EdgeInsets.all(16),
+      margin: EdgeInsets.zero,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -244,7 +314,7 @@ class _HomeScreenState extends State<HomeScreen> {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
         boxShadow: [
           BoxShadow(
             color: Colors.grey.withOpacity(0.3),
@@ -255,13 +325,24 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Column(
         children: [
-          const Text(
-            'Total Balance',
-            style: TextStyle(color: Colors.white, fontSize: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildBalanceToggle(provider, BalanceMode.total, 'Total'),
+              const SizedBox(width: 8),
+              _buildBalanceToggle(provider, BalanceMode.verified, 'Verified'),
+              const SizedBox(width: 8),
+              _buildBalanceToggle(provider, BalanceMode.unverified, 'Unverified'),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _getBalanceLabel(provider.balanceMode),
+            style: const TextStyle(color: Colors.white, fontSize: 16),
           ),
           const SizedBox(height: 8),
           Text(
-            format.format(provider.totalBalance),
+            format.format(provider.displayedBalance),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 32,
@@ -277,6 +358,36 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  String _getBalanceLabel(BalanceMode mode) {
+    switch (mode) {
+      case BalanceMode.total: return 'Total Balance';
+      case BalanceMode.verified: return 'Verified Balance';
+      case BalanceMode.unverified: return 'Unverified Balance';
+    }
+  }
+
+  Widget _buildBalanceToggle(TransactionProvider provider, BalanceMode mode, String label) {
+    final isSelected = provider.balanceMode == mode;
+    return GestureDetector(
+      onTap: () => provider.setBalanceMode(mode),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.white.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.orange : Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+          ),
+        ),
       ),
     );
   }
@@ -310,6 +421,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _showFilterSheet(BuildContext context, TransactionProvider provider) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -317,7 +429,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return StatefulBuilder(
           builder: (context, setModalState) {
             return Padding(
-              padding: const EdgeInsets.all(20),
+              padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -342,11 +454,62 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                   const SizedBox(height: 20),
-                  // Date Range Filter
-                  const Text(
-                    'Date Range',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  
+                  // Verification Filter
+                  const Text('Status', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      FilterChip(
+                        label: const Text('All'),
+                        selected: provider.verificationFilter == VerificationFilter.all,
+                        onSelected: (selected) {
+                          if (selected) {
+                            provider.setVerificationFilter(VerificationFilter.all);
+                            setModalState(() {});
+                          }
+                        },
+                      ),
+                      FilterChip(
+                        label: const Text('Verified'),
+                        selected: provider.verificationFilter == VerificationFilter.verified,
+                        onSelected: (selected) {
+                          provider.setVerificationFilter(
+                              selected ? VerificationFilter.verified : VerificationFilter.all);
+                          setModalState(() {});
+                        },
+                      ),
+                      FilterChip(
+                        label: const Text('Unverified'),
+                        selected: provider.verificationFilter == VerificationFilter.unverified,
+                        onSelected: (selected) {
+                          provider.setVerificationFilter(
+                              selected ? VerificationFilter.unverified : VerificationFilter.all);
+                          setModalState(() {});
+                        },
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 20),
+
+                  // Recipient Filter
+                  const Text('Recipient', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _recipientController,
+                    decoration: InputDecoration(
+                      hintText: 'Filter by recipient name',
+                      prefixIcon: const Icon(Icons.person_search),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    onChanged: (value) => provider.setRecipientFilter(value),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Date Range Filter
+                  const Text('Date Range', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
                     onPressed: () async {
@@ -369,11 +532,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
+
                   // Source Filter
-                  const Text(
-                    'Source',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
+                  const Text('Source', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -402,15 +563,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         onSelected: (selected) {
                           provider.setSourceFilter(
                               selected ? TransactionSource.stanChart : null);
-                          setModalState(() {});
-                        },
-                      ),
-                      FilterChip(
-                        label: const Text('FNB'),
-                        selected: provider.sourceFilter == TransactionSource.fnb,
-                        onSelected: (selected) {
-                          provider.setSourceFilter(
-                              selected ? TransactionSource.fnb : null);
                           setModalState(() {});
                         },
                       ),

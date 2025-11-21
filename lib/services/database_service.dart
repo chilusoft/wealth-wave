@@ -26,7 +26,7 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), 'expense_tracker.db');
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE transactions(
@@ -38,7 +38,8 @@ class DatabaseService {
             source INTEGER,
             body TEXT,
             recipient TEXT,
-            transactionId TEXT
+            transactionId TEXT,
+            isVerified INTEGER DEFAULT 0
           )
         ''');
       },
@@ -49,6 +50,9 @@ class DatabaseService {
         if (oldVersion < 3) {
           await db.execute('ALTER TABLE transactions ADD COLUMN transactionId TEXT');
         }
+        if (oldVersion < 4) {
+          await db.execute('ALTER TABLE transactions ADD COLUMN isVerified INTEGER DEFAULT 0');
+        }
       },
     );
   }
@@ -56,10 +60,13 @@ class DatabaseService {
   Future<int> insertTransaction(Transaction transaction) async {
     if (kIsWeb) {
       // Mock insert for web
-      // Check for duplicates by transactionId if available, otherwise by body and date
-      if (transaction.transactionId != null) {
-        if (_webTransactions.any((t) => t.transactionId == transaction.transactionId)) {
-          return 0; // Duplicate transaction ID
+      // Check for duplicates: transactionId + sender + recipient must all match
+      if (transaction.transactionId != null && transaction.transactionId!.isNotEmpty) {
+        if (_webTransactions.any((t) => 
+          t.transactionId == transaction.transactionId &&
+          t.sender == transaction.sender &&
+          t.recipient == transaction.recipient)) {
+          return 0; // Duplicate
         }
       } else {
         if (_webTransactions.any((t) => t.body == transaction.body && t.date == transaction.date)) {
@@ -72,16 +79,21 @@ class DatabaseService {
 
     final db = await database;
     
-    // Check for duplicates by transactionId if available
+    // Enhanced duplicate detection: transactionId + sender + recipient
     if (transaction.transactionId != null && transaction.transactionId!.isNotEmpty) {
       final List<Map<String, dynamic>> maps = await db.query(
         'transactions',
-        where: 'transactionId = ?',
-        whereArgs: [transaction.transactionId],
+        where: 'transactionId = ? AND sender = ? AND (recipient = ? OR (recipient IS NULL AND ? IS NULL))',
+        whereArgs: [
+          transaction.transactionId,
+          transaction.sender,
+          transaction.recipient,
+          transaction.recipient,
+        ],
       );
 
       if (maps.isNotEmpty) {
-        return 0; // Duplicate transaction ID
+        return 0; // Duplicate: same ID, sender, and recipient
       }
     } else {
       // Fallback: check by body and date if no transactionId
@@ -109,6 +121,75 @@ class DatabaseService {
     return List.generate(maps.length, (i) {
       return Transaction.fromMap(maps[i]);
     });
+  }
+
+  Future<void> markAsVerified(int id, bool verified) async {
+    if (kIsWeb) {
+      final index = _webTransactions.indexWhere((t) => t.id == id);
+      if (index != -1) {
+        final t = _webTransactions[index];
+        _webTransactions[index] = Transaction(
+          id: t.id,
+          sender: t.sender,
+          amount: t.amount,
+          date: t.date,
+          type: t.type,
+          source: t.source,
+          body: t.body,
+          recipient: t.recipient,
+          transactionId: t.transactionId,
+          isVerified: verified,
+        );
+      }
+      return;
+    }
+
+    final db = await database;
+    await db.update(
+      'transactions',
+      {'isVerified': verified ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<List<List<Transaction>>> getPossibleDuplicates() async {
+    List<Transaction> allTransactions;
+    
+    if (kIsWeb) {
+      allTransactions = _webTransactions;
+    } else {
+      allTransactions = await getTransactions();
+    }
+
+    // Group by transactionId, find groups with multiple entries
+    Map<String, List<Transaction>> grouped = {};
+    
+    for (var transaction in allTransactions) {
+      if (transaction.transactionId != null && transaction.transactionId!.isNotEmpty) {
+        if (!grouped.containsKey(transaction.transactionId)) {
+          grouped[transaction.transactionId!] = [];
+        }
+        grouped[transaction.transactionId!]!.add(transaction);
+      }
+    }
+
+    // Filter to only groups with more than one transaction
+    return grouped.values.where((group) => group.length > 1).toList();
+  }
+
+  Future<void> deleteTransaction(int id) async {
+    if (kIsWeb) {
+      _webTransactions.removeWhere((t) => t.id == id);
+      return;
+    }
+
+    final db = await database;
+    await db.delete(
+      'transactions',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<void> clearTransactions() async {
