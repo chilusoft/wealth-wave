@@ -27,8 +27,7 @@ class ParserService {
       return _parseAirtel(body, date, sender);
     } else if (normalizedSender.contains('MOMO') || normalizedSender.contains('MTN')) {
       return _parseMomo(body, date, sender);
-    } else if (sender.contains('STAN') || sender.contains('SCB') || 
-               sender.contains('STANCHART')) {
+    } else if (normalizedSender == 'STANCHARTZM') {
       return _parseStanChart(body, date, sender);
     }
 
@@ -37,13 +36,10 @@ class ParserService {
   }
 
   Transaction? _parseAirtel(String body, DateTime date, String sender) {
-    // Example: "You have received K100.00 from..."
-    // Example: "Txn Id: ... You have sent K50.00 to..."
-    
-    // Extract transaction ID - required for all transactions
-    String? transactionId = _extractTransactionId(body);
+    // Airtel Rule: ID starts with 'txn' or 'TID'
+    String? transactionId = _extractAirtelTransactionId(body);
     if (transactionId == null || transactionId.isEmpty) {
-      return null; // Reject SMS without transaction ID (promotional messages)
+      return null; 
     }
     
     double amount = _extractAmount(body);
@@ -69,10 +65,10 @@ class ParserService {
   }
 
   Transaction? _parseMomo(String body, DateTime date, String sender) {
-    // Extract transaction ID - required for all transactions
-    String? transactionId = _extractTransactionId(body);
+    // Momo Rule: ID starts with 'Transaction ID'
+    String? transactionId = _extractMomoTransactionId(body);
     if (transactionId == null || transactionId.isEmpty) {
-      return null; // Reject SMS without transaction ID (promotional messages)
+      return null; 
     }
     
     double amount = _extractAmount(body);
@@ -98,10 +94,11 @@ class ParserService {
   }
 
   Transaction? _parseStanChart(String body, DateTime date, String sender) {
-    // Extract transaction ID - required for all transactions
-    String? transactionId = _extractTransactionId(body);
+    // StanChart Rule: Sender is 'StanChartZM' (already checked in parseRaw)
+    // Use specific extractor that requires 'ref' prefix for transaction ID
+    String? transactionId = _extractStanChartTransactionId(body);
     if (transactionId == null || transactionId.isEmpty) {
-      return null; // Reject SMS without transaction ID (promotional messages)
+      return null; 
     }
     
     double amount = _extractAmount(body);
@@ -157,6 +154,42 @@ class ParserService {
       return startMatch.group(1)?.trim().toUpperCase();
     }
 
+    return null;
+  }
+
+  // Specific extractor for StanChart requiring 'ref' prefix
+  String? _extractStanChartTransactionId(String body) {
+    final regex = RegExp(r'ref(?:\s+)?(?:id|no|number)?[\s:.-]*([A-Z0-9]{5,})', caseSensitive: false);
+    final match = regex.firstMatch(body);
+    if (match != null && match.groupCount >= 1) {
+      return match.group(1)?.trim().toUpperCase();
+    }
+    return null;
+  }
+
+  // Specific Extractors
+  
+  String? _extractAirtelTransactionId(String body) {
+    // Starts with txn or TID
+    final regex = RegExp(r'(?:txn|tid)(?:\s+)?(?:id|no|number)?[\s:.-]*([A-Z0-9]{5,})', caseSensitive: false);
+    final match = regex.firstMatch(body);
+    if (match != null && match.groupCount >= 1) {
+      return match.group(1)?.trim().toUpperCase();
+    }
+    // Fallback to start regex if needed, or keep strict? 
+    // User said "starts with txn or TID", implying strictness.
+    // But let's keep the start fallback just in case, or maybe not if we want to be strict.
+    // Let's assume strict based on "starts with".
+    return null;
+  }
+
+  String? _extractMomoTransactionId(String body) {
+    // Starts with Transaction ID
+    final regex = RegExp(r'Transaction\s+ID[\s:.-]*([A-Z0-9]{5,})', caseSensitive: false);
+    final match = regex.firstMatch(body);
+    if (match != null && match.groupCount >= 1) {
+      return match.group(1)?.trim().toUpperCase();
+    }
     return null;
   }
 }
